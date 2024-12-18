@@ -1,65 +1,48 @@
 //! Defines the [Token] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-06
+//! Last Modified --- 2024-12-18
 
 use alloc::alloc::Allocator;
-use alloc::boxed::Box;
-use core::fmt::{self,Display,Formatter};
-
-fn copy_str_in<A>(text: &str, alloc: A) -> Box<str,A>
-  where A: Allocator {
-  let mut dest = unsafe { Box::<[u8],A>::new_uninit_slice_in(text.len(),alloc).assume_init() };
-
-  dest.copy_from_slice(text.as_bytes());
-  let (token_ptr,alloc) = Box::into_raw_with_allocator(dest);
-
-  unsafe { Box::from_raw_in(token_ptr as *mut str,alloc) }
-}
+use core::fmt::{self,Debug,Display,Formatter};
+use crate::nodes::impls::{self,Owned};
 
 /// Text token.
-#[derive(Debug)]
-pub struct Token<A>
-  where A: Allocator, {
+pub struct Token<Alloc>(pub(crate) TokenInner<Owned<Alloc>>)
+  where Alloc: Allocator;
+
+/// Internals of a token.
+pub(crate) struct TokenInner<Impl>
+  where Impl: impls::Impl {
   /// Text of the Token.
-  pub text: Box<str,A>,
+  pub text: Impl::Text,
 }
 
-impl<A> Token<A>
-  where A: Allocator {
+impl<Impl> TokenInner<Impl>
+  where Impl: impls::Impl {
   /// Constructs a Token from parts.
   ///
   /// # Params
   ///
   /// text --- Text of the Token.  
-  pub const unsafe fn from_parts(text: Box<str,A>) -> Self { Self { text } }
-  /// Constructs a Token from a [str].
-  ///
-  /// # Params
-  ///
-  /// token --- Text of the Token.  
-  /// alloc --- Allocator of the Token.  
-  pub fn from_str(token: &str, alloc: A) -> Self {
-    unsafe { Self::from_parts(copy_str_in(token,alloc)) }
-  }
+  pub const fn from_parts(text: Impl::Text) -> Self { Self { text } }
 }
 
-impl<A> Clone for Token<A>
-  where A: Allocator + Clone, {
-  fn clone(&self) -> Self {
-    unsafe { Self::from_parts(copy_str_in(&self.text,Box::allocator(&self.text).clone())) }
-  }
+impl<Impl> Clone for TokenInner<Impl>
+  where Impl: impls::Impl, Impl::Text: Clone {
+  fn clone(&self) -> Self { Self::from_parts(self.text.clone()) }
+  fn clone_from(&mut self, source: &Self) { self.text.clone_from(&source.text) }
 }
 
-impl<A> Eq for Token<A>
-  where A: Allocator {}
+impl<Impl> Copy for TokenInner<Impl>
+  where Impl: impls::Impl, Impl::Text: Copy {}
 
-impl<A,B> PartialEq<Token<B>> for Token<A>
-  where A: Allocator, B: Allocator, {
-  fn eq(&self, rhs: &Token<B>) -> bool { *self.text == *rhs.text }
+impl<Impl> Debug for TokenInner<Impl>
+  where Impl: impls::Impl, Impl::Text: Debug {
+  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { self.text.fmt(fmt) }
 }
 
-impl<A> Display for Token<A>
-  where A: Allocator {
-  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { write!(fmt,"{}",self.text) }
+impl<Impl> Display for TokenInner<Impl>
+  where Impl: impls::Impl, Impl::Text: Display {
+  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { self.text.fmt(fmt) }
 }

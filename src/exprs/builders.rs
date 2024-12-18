@@ -1,133 +1,84 @@
 //! Defines the [Builder] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-06
+//! Last Modified --- 2024-12-18
 
 use alloc::alloc::Allocator;
-use crate::exprs::{Expr,Token};
+use core::fmt::{self,Debug,Formatter};
+#[cfg(doc)]
+use crate::exprs::Expr;
+use crate::nodes::impls as expr_impls;
+use crate::nodes::Node;
 pub use self::lenses::Lens;
-use self::nodes::Node;
-use Builder::*;
+use BuilderInner::*;
 
 mod lenses;
-mod nodes;
+pub(crate) mod impls;
 
-/// Builder of [Expr]s.
-///
-/// Represents an [Expr] with holes to be filled.
-#[derive(Clone,Debug)]
-pub enum Builder<A>
-  where A: Allocator {
-  /// A hole to be filled by an [Expr].
+/// Internals of an expression builder.
+pub(crate) enum BuilderInner<Impl>
+  where Impl: expr_impls::Impl {
+  /// A hole to be filled by an [Expr][expr_impls::Impl::Expr].
   BHole,
-  /// A complete [Expr].
-  BExpr(Expr<A>),
-  /// A partially built [Expr].
-  BNode(Node<A>),
+  /// A complete [Expr][expr_impls::Impl::Expr].
+  BExpr(Impl::Expr),
+  /// A partially built [Expr][expr_impls::Impl::Expr].
+  BNode(Node<Impl::Builder>),
 }
 
-impl<A> Builder<A>
-  where A: Allocator {
-  /// Construct a Builder which is a hole to be filled.
-  pub const fn hole() -> Self { BHole }
-  /// Constructs a Builder from an [Expr].
+/// Builder of [Exprs][Expr].
+///
+/// Represents an [Expr] with holes to be filled.
+pub struct Builder<Alloc>(pub(crate) BuilderInner<impls::Owned<Alloc>>)
+  where Alloc: Allocator;
+
+impl<Impl> BuilderInner<Impl>
+  where Impl: expr_impls::Impl {
+  /// Constructs a Builder from a [Expr][expr_impls::Impl::Expr].
   ///
   /// # Params
   ///
-  /// expr --- Constituting [Expr].  
-  pub const fn from_expr(expr: Expr<A>) -> Self { BExpr(expr) }
-  /// Constructs a Builder from a [Token].
-  ///
-  /// # Params
-  ///
-  /// token --- [Token] which constitutes the [Expr].  
-  /// alloc --- Allocator of the [Expr].  
-  pub const fn from_token(token: Token<A>, alloc: A) -> Self {
-    Self::from_expr(Expr::from_token(token,alloc))
-  }
+  /// expr --- Constituting [Expr][expr_impls::Impl::Expr].  
+  pub const fn from_expr(expr: Impl::Expr) -> Self { BExpr(expr) }
   /// Constructs a Builder from a [Node].
   ///
   /// # Params
   ///
-  /// node --- [Node] which constitutes the [Expr].  
-  const fn from_node(node: Node<A>) -> Self { BNode(node) }
-  /// Tests that there are no holes in the [Expr].
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// # #![feature(allocator_api)]
-  /// #
-  /// # extern crate alloc;
-  /// #
-  /// # use alloc::alloc::Global;
-  /// # use expr::exprs::Token;
-  /// # use expr::exprs::builders::Builder;
-  /// #
-  /// # let alloc = Global;
-  /// # let token_a = Token::from_str("a",alloc);
-  /// let mut builder = Builder::hole();
-  ///
-  /// assert!(!builder.can_finish());
-  /// 
-  /// builder.lens().fill_token(token_a.clone(),alloc);
-  /// assert!(builder.can_finish());
-  ///
-  /// builder.lens().push_token(token_a.clone(),alloc);
-  /// assert!(builder.can_finish());
-  ///
-  /// builder.lens().push_builder(Builder::hole());
-  /// assert!(!builder.can_finish());
-  /// ```
-  pub const fn can_finish(&self) -> bool {
+  /// node --- [Node] which constitutes the [Expr][expr_impls::Impl::Expr].  
+  pub const fn from_node(node: Node<Impl::Builder>) -> Self { BNode(node) }
+  /// Tests that there are no holes in the [Expr][expr_impls::Impl::Expr].
+  pub const fn can_finish(&self) -> bool
+    where Impl: ~const expr_impls::Impl {
     match self {
-      BHole       => false,
-      BExpr(_)    => true,
-      BNode(node) => node.can_finish(),
+      BHole        => false,
+      BExpr(_expr) => true,
+      BNode(node)  => Impl::can_finish(node),
     }
   }
-  /// Returns the built [Expr].
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// # #![feature(allocator_api)]
-  /// #
-  /// # extern crate alloc;
-  /// #
-  /// # use alloc::alloc::Global;
-  /// # use expr::exprs::Token;
-  /// # use expr::exprs::builders::Builder;
-  /// #
-  /// # let alloc = Global;
-  /// # let token_a = Token::from_str("a",alloc);
-  /// # let token_b = Token::from_str("b",alloc);
-  /// let mut builder = Builder::from_token(token_a.clone(),alloc);
-  ///
-  /// assert_eq!("a",format!("{}",builder.clone().finish()));
-  ///
-  /// builder.lens().push_token(token_a.clone(),alloc);
-  /// assert_eq!("a [a]",format!("{}",builder.clone().finish()));
-  ///
-  /// let mut lens = builder.lens();
-  /// lens.push_builder(Builder::hole());
-  /// lens.visit_child(1).fill_token(token_b.clone(),alloc);
-  /// assert_eq!("a [a, b]",format!("{}",builder.clone().finish()));
-  /// ```
+  /// Returns the built [Expr][expr_impls::Impl::Expr].
   ///
   /// # Panics
   ///
-  /// If the [Expr] has unfilled holes; use [can_finish][Builder::can_finish] to test if this
-  /// function would panic.
-  pub fn finish(self) -> Expr<A> {
+  /// If the [Expr][expr_impls::Impl::Expr] has unfilled holes; use [can_finish][Self::can_finish]
+  /// to test if this function would panic.
+  pub fn finish(self) -> Impl::Expr {
     debug_assert!(self.can_finish(),"called `finish` on a `Builder` with holes");
 
     match self {
       BHole       => panic!("called `finish` on a hole"),
       BExpr(expr) => expr,
-      BNode(node) => node.finish(),
+      BNode(node) => Impl::finish(node),
     }
   }
-  /// Returns a [Lens] at the root of the [Expr] under construction.
-  pub const fn lens(&mut self) -> Lens<A> { Lens::from_builder(self) }
+}
+
+impl<Impl> Debug for BuilderInner<Impl>
+  where Impl: expr_impls::Impl, Impl::Expr: Debug, Node<Impl::Builder>: Debug {
+  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+    match self {
+      BHole       => fmt.write_str("BHole"),
+      BExpr(expr) => fmt.debug_tuple("BExpr").field(expr).finish(),
+      BNode(node) => fmt.debug_tuple("BNode").field(node).finish(),
+    }
+  }
 }

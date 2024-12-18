@@ -1,7 +1,7 @@
 //! Defines the [Node] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-06
+//! Last Modified --- 2024-12-18
 
 use alloc::alloc::Allocator;
 use alloc::vec::Vec;
@@ -19,7 +19,7 @@ pub struct Node<A>
   /// Child expressions.
   pub children: Vec<Builder<A>,A>,
   /// Formatting method of the [Expr].
-  pub fmt: fn(&Expr<A>, &mut Formatter) -> fmt::Result,
+  pub fmt: fn(expr: &Expr<A>, fmt: &mut Formatter) -> fmt::Result,
 }
 
 impl<A> Node<A>
