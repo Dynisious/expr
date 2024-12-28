@@ -34,7 +34,7 @@ impl<Token, Children, Fmt> ExprInner<Token, Children, Fmt> {
   }
   /// Deconstructs an ExprInner into parts.
   ///
-  /// Pre-inverse of [from_parts][Self::from_parts].
+  /// Inverse of [from_parts][Self::from_parts].
   pub const fn into_parts(self) -> (Token, Children, Fmt) {
     let head_token = unsafe { ptr::read(&self.head_token) };
     let child_exprs = unsafe { ptr::read(&self.child_exprs) };

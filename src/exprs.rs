@@ -10,9 +10,10 @@ use core::{mem,ptr};
 use core::str::FromStr;
 use core::ops::{Deref,DerefMut};
 use crate::tokens::Token;
+pub use self::builders::Builder;
 pub use self::expr_inners::ExprInner;
 
-pub mod builders;
+mod builders;
 mod expr_inners;
 
 /// Formatting method for [Displaying][Display] [Exprs][Expr].
@@ -35,7 +36,7 @@ pub fn fmt_expr<Token,Alloc>(expr: &Expr<Token, Alloc>, fmt: &mut Formatter) -> 
 
 /// Expression tree of `Token`s.
 #[repr(transparent)]
-pub struct Expr<Token, Alloc>
+pub struct Expr<Token, Alloc = Global>
   where Alloc: Allocator {
   /// The inner expression representation.
   pub inner: ExprInner<Token,Vec<Self,Alloc>,FmtExpr<Token,Alloc>>,
@@ -58,7 +59,7 @@ impl<Token, Alloc> Expr<Token, Alloc>
   }
   /// Deconstructs an Expr into parts.
   ///
-  /// Pre-inverse of [from_parts][Self::from_parts].
+  /// Inverse of [from_parts][Self::from_parts].
   pub const fn into_parts(self) -> (Token, Vec<Self, Alloc>, FmtExpr<Token, Alloc>) {
     let inner = unsafe { ptr::read(&self.inner) };
 
@@ -114,6 +115,15 @@ impl<Alloc> Expr<Token<Alloc>, Alloc>
     where Alloc: Clone { Self::from_token(Token::from_str_in(head_token,allocator)) }
 }
 
+impl Expr<Token<Global>, Global> {
+  /// Constructs an Expr from text.
+  ///
+  /// # Params
+  ///
+  /// head_token --- Token text at the head of this expression.  
+  pub fn from_str(head_token: &str) -> Self { Self::from_str_in(head_token,Global) }
+}
+
 impl<Token, Alloc> Clone for Expr<Token, Alloc>
   where Token: Clone, Alloc: Allocator + Clone {
   fn clone(&self) -> Self {
@@ -130,7 +140,7 @@ impl<Alloc> From<Token<Alloc>> for Expr<Token<Alloc>, Alloc>
 }
 
 impl From<&str> for Expr<Token<Global>, Global> {
-  fn from(from: &str) -> Self { Self::from_str_in(from,Global) }
+  fn from(from: &str) -> Self { Self::from_str(from) }
 }
 
 impl FromStr for Expr<Token<Global>, Global> {

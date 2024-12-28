@@ -1,7 +1,7 @@
 //! Defines the [Token] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-25
+//! Last Modified --- 2024-12-28
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
@@ -10,11 +10,11 @@ use core::convert::AsRef;
 use core::fmt::{self,Debug,Display,Formatter};
 use core::{mem,ptr};
 use core::str::{self,FromStr};
-use core::ops::Deref;
+use core::ops::{Deref,DerefMut};
 
 /// Text token.
 #[repr(transparent)]
-pub struct Token<Alloc>
+pub struct Token<Alloc = Global>
   where Alloc: Allocator {
   /// Backing bytes of the text.
   bytes: Vec<u8,Alloc>,
@@ -57,6 +57,19 @@ impl<Alloc> Token<Alloc>
   pub const fn as_str(&self) -> &str {
     unsafe { str::from_utf8_unchecked(self.bytes.as_slice()) }
   }
+  /// Gets the token text.
+  pub const fn as_str_mut(&mut self) -> &mut str {
+    unsafe { str::from_utf8_unchecked_mut(self.bytes.as_mut_slice()) }
+  }
+}
+
+impl Token<Global> {
+  /// Constructs a Token from text.
+  ///
+  /// # Params
+  ///
+  /// token --- Text of the Token.  
+  pub fn from_str(token: &str) -> Self { Self::from_str_in(token,Global) }
 }
 
 impl<Alloc> Clone for Token<Alloc>
@@ -88,6 +101,11 @@ impl<Alloc> Deref for Token<Alloc>
   type Target = str;
 
   fn deref(&self) -> &Self::Target { self.as_str() }
+}
+
+impl<Alloc> DerefMut for Token<Alloc>
+  where Alloc: Allocator {
+  fn deref_mut(&mut self) -> &mut Self::Target { self.as_str_mut() }
 }
 
 impl<Alloc> Borrow<str> for Token<Alloc>
