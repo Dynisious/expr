@@ -1,30 +1,29 @@
 //! Defines the [Expr] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-25
+//! Last Modified --- 2024-12-28
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
-use core::borrow::{Borrow,BorrowMut};
 use core::fmt::{self,Debug,Display,Formatter};
 use core::{mem,ptr};
 use core::str::FromStr;
+use core::ops::{Deref,DerefMut};
 use crate::tokens::Token;
-use self::builders::Builder;
-use self::expr_inners::ExprInner;
+pub use self::expr_inners::ExprInner;
 
 pub mod builders;
 mod expr_inners;
 
 /// Formatting method for [Displaying][Display] [Exprs][Expr].
-pub type FmtExpr<Head, Alloc> = fn(expr: &Expr<Head, Alloc>, fmt: &mut Formatter) -> fmt::Result;
+pub type FmtExpr<Token, Alloc> = fn(expr: &Expr<Token, Alloc>, fmt: &mut Formatter) -> fmt::Result;
 
 /// The default `FmtExpr` implementation
-pub fn fmt_expr<Head,Alloc>(expr: &Expr<Head, Alloc>, fmt: &mut Formatter) -> fmt::Result
-  where Head: Display, Alloc: Allocator {
-  write!(fmt,"{}",expr.head_token())?;
+pub fn fmt_expr<Token,Alloc>(expr: &Expr<Token, Alloc>, fmt: &mut Formatter) -> fmt::Result
+  where Token: Display, Alloc: Allocator {
+  write!(fmt,"{}",expr.head_token)?;
 
-  let mut child_exprs = expr.child_exprs().iter();
+  let mut child_exprs = expr.child_exprs.iter();
   if let Some(child) = child_exprs.next() {
     write!(fmt," [{}",child)?;
     for child in child_exprs { write!(fmt,", {}",child)? }
@@ -34,12 +33,15 @@ pub fn fmt_expr<Head,Alloc>(expr: &Expr<Head, Alloc>, fmt: &mut Formatter) -> fm
   Ok(())
 }
 
-/// Expression tree.
+/// Expression tree of `Token`s.
 #[repr(transparent)]
-pub struct Expr<Head, Alloc>(ExprInner<Head,Vec<Self,Alloc>,FmtExpr<Head,Alloc>>)
-  where Alloc: Allocator;
+pub struct Expr<Token, Alloc>
+  where Alloc: Allocator {
+  /// The inner expression representation.
+  pub inner: ExprInner<Token,Vec<Self,Alloc>,FmtExpr<Token,Alloc>>,
+}
 
-impl<Head, Alloc> Expr<Head, Alloc>
+impl<Token, Alloc> Expr<Token, Alloc>
   where Alloc: Allocator {
   /// Constructs an Expr from parts.
   ///
@@ -48,15 +50,17 @@ impl<Head, Alloc> Expr<Head, Alloc>
   /// head_token --- Token at the head of this expression.  
   /// child_exprs --- Child expressions of this expression.  
   /// fmt_expr --- Custom formatting method for [Display].  
-  pub const fn from_parts(head_token: Head, child_exprs: Vec<Self, Alloc>,
-                          fmt_expr: FmtExpr<Head, Alloc>) -> Self {
-    Self(ExprInner::from_parts(head_token,child_exprs,fmt_expr))
+  pub const fn from_parts(head_token: Token, child_exprs: Vec<Self, Alloc>,
+                          fmt_expr: FmtExpr<Token, Alloc>) -> Self {
+    let inner = ExprInner::from_parts(head_token,child_exprs,fmt_expr);
+
+    Self{inner}
   }
   /// Deconstructs an Expr into parts.
   ///
   /// Pre-inverse of [from_parts][Self::from_parts].
-  pub const fn into_parts(self) -> (Head, Vec<Self, Alloc>, FmtExpr<Head, Alloc>) {
-    let inner = unsafe { ptr::read(&self.0) };
+  pub const fn into_parts(self) -> (Token, Vec<Self, Alloc>, FmtExpr<Token, Alloc>) {
+    let inner = unsafe { ptr::read(&self.inner) };
 
     mem::forget(self);
     inner.into_parts()
@@ -67,10 +71,10 @@ impl<Head, Alloc> Expr<Head, Alloc>
   ///
   /// head_token --- Token at the head of this expression.  
   /// allocator --- Allocator of the expression.  
-  pub const fn from_token_in(head_token: Head, allocator: Alloc) -> Self
-    where Head: Display {
+  pub const fn from_token_in(head_token: Token, allocator: Alloc) -> Self
+    where Token: Display {
     let child_exprs = Vec::new_in(allocator);
-    let fmt_expr: FmtExpr<Head,Alloc> = fmt_expr;
+    let fmt_expr: FmtExpr<Token,Alloc> = fmt_expr;
 
     Self::from_parts(head_token,child_exprs,fmt_expr)
   }
@@ -80,34 +84,11 @@ impl<Head, Alloc> Expr<Head, Alloc>
   ///
   /// allocator --- Allocator of the expression.  
   pub fn new_in(allocator: Alloc) -> Self
-    where Head: Default + Display {
+    where Token: Default + Display {
     let head_token = Default::default();
 
     Self::from_token_in(head_token,allocator)
   }
-  /// References all fields.
-  pub const fn fields(&self) -> (&Head, &Vec<Self, Alloc>, &FmtExpr<Head, Alloc>) {
-    self.0.fields()
-  }
-  /// References all fields.
-  pub const fn fields_mut(&mut self) -> (&mut Head, &mut Vec<Self, Alloc>, &mut FmtExpr<Head, Alloc>) {
-    self.0.fields_mut()
-  }
-  /// Token at the head of this expression.
-  pub const fn head_token(&self) -> &Head { &self.0.head_token }
-  /// Token at the head of this expression.
-  pub const fn head_token_mut(&mut self) -> &mut Head { &mut self.0.head_token }
-  /// Token at the head of this expression.
-  pub const fn child_exprs(&self) -> &Vec<Self, Alloc> { &self.0.child_exprs }
-  /// Token at the head of this expression.
-  pub const fn child_exprs_mut(&mut self) -> &mut Vec<Self, Alloc> { &mut self.0.child_exprs }
-  /// Token at the head of this expression.
-  pub const fn fmt_expr(&self) -> &FmtExpr<Head, Alloc> { &self.0.fmt_expr }
-  /// Token at the head of this expression.
-  pub const fn fmt_expr_mut(&mut self) -> &mut FmtExpr<Head, Alloc> { &mut self.0.fmt_expr }
-  /// Formats the fields of `self`.
-  pub fn fmt_fields(&self, fmt: &mut Formatter) -> fmt::Result
-    where Head: Debug { self.0.fmt_fields(fmt) }
 }
 
 impl<Alloc> Expr<Token<Alloc>, Alloc>
@@ -133,10 +114,14 @@ impl<Alloc> Expr<Token<Alloc>, Alloc>
     where Alloc: Clone { Self::from_token(Token::from_str_in(head_token,allocator)) }
 }
 
-impl<Head, Alloc> Clone for Expr<Head, Alloc>
-  where Head: Clone, Alloc: Allocator + Clone {
-  fn clone(&self) -> Self { Self(self.0.clone()) }
-  fn clone_from(&mut self, source: &Self) { self.0.clone_from(&source.0) }
+impl<Token, Alloc> Clone for Expr<Token, Alloc>
+  where Token: Clone, Alloc: Allocator + Clone {
+  fn clone(&self) -> Self {
+    let inner = self.inner.clone();
+
+    Self{inner}
+  }
+  fn clone_from(&mut self, source: &Self) { self.inner.clone_from(&source.inner) }
 }
 
 impl<Alloc> From<Token<Alloc>> for Expr<Token<Alloc>, Alloc>
@@ -154,46 +139,39 @@ impl FromStr for Expr<Token<Global>, Global> {
   fn from_str(text: &str) -> Result<Self,Self::Err> { Ok(text.into()) }
 }
 
-impl<Head, Alloc> Eq for Expr<Head, Alloc>
-  where Head: Eq, Alloc: Allocator {}
+impl<Token, Alloc> Eq for Expr<Token, Alloc>
+  where Token: Eq, Alloc: Allocator {}
 
-impl<Head1, Alloc, Head2, Children, Fmt> PartialEq<ExprInner<Head2, Children, Fmt>>
-  for Expr<Head1, Alloc>
-  where Head1: PartialEq<Head2>, Alloc: Allocator, Vec<Self,Alloc>: PartialEq<Children> {
-  fn eq(&self, rhs: &ExprInner<Head2, Children, Fmt>) -> bool { self.0 == *rhs }
+impl<Token1, Alloc, Token2, Children, Fmt> PartialEq<ExprInner<Token2, Children, Fmt>>
+  for Expr<Token1, Alloc>
+  where Token1: PartialEq<Token2>, Alloc: Allocator, Vec<Self,Alloc>: PartialEq<Children> {
+  fn eq(&self, rhs: &ExprInner<Token2, Children, Fmt>) -> bool { self.inner == *rhs }
 }
 
-impl<Head1, Alloc1, Head2, Alloc2> PartialEq<Expr<Head2, Alloc2>> for Expr<Head1, Alloc1>
-  where Head1: PartialEq<Head2>, Alloc1: Allocator, Alloc2: Allocator {
-  fn eq(&self, rhs: &Expr<Head2, Alloc2>) -> bool { *self == rhs.0 }
+impl<Token1, Alloc1, Token2, Alloc2> PartialEq<Expr<Token2, Alloc2>> for Expr<Token1, Alloc1>
+  where Token1: PartialEq<Token2>, Alloc1: Allocator, Alloc2: Allocator {
+  fn eq(&self, rhs: &Expr<Token2, Alloc2>) -> bool { *self == rhs.inner }
 }
 
-impl<Head1, Head2, Alloc1, Alloc2> PartialEq<Builder<Head2,Alloc2>> for Expr<Head1, Alloc1>
-  where Head1: PartialEq<Head2>, Alloc1: Allocator, Alloc2: Allocator {
-  fn eq(&self, rhs: &Builder<Head2,Alloc2>) -> bool { self.eq_builder(rhs) }
-}
-
-impl<Head, Alloc> Borrow<ExprInner<Head, Vec<Self, Alloc>, FmtExpr<Head, Alloc>>>
-  for Expr<Head, Alloc>
+impl<Token, Alloc> Deref for Expr<Token, Alloc>
   where Alloc: Allocator {
-  fn borrow(&self) -> &ExprInner<Head, Vec<Self, Alloc>, FmtExpr<Head, Alloc>> { &self.0 }
+  type Target = ExprInner<Token,Vec<Self,Alloc>,FmtExpr<Token,Alloc>>;
+
+  fn deref(&self) -> &Self::Target { &self.inner }
 }
 
-impl<Head, Alloc> BorrowMut<ExprInner<Head, Vec<Self, Alloc>, FmtExpr<Head, Alloc>>>
-  for Expr<Head, Alloc>
+impl<Token, Alloc> DerefMut for Expr<Token, Alloc>
   where Alloc: Allocator {
-  fn borrow_mut(&mut self) -> &mut ExprInner<Head, Vec<Self, Alloc>, FmtExpr<Head, Alloc>> {
-    &mut self.0
-  }
+  fn deref_mut(&mut self) -> &mut Self::Target { &mut self.inner }
 }
 
-impl<Head, Alloc> Display for Expr<Head, Alloc>
+impl<Token, Alloc> Display for Expr<Token, Alloc>
   where Alloc: Allocator {
-  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { (self.fmt_expr())(self,fmt) }
+  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { (self.fmt_expr)(self,fmt) }
 }
 
-impl<Head, Alloc> Debug for Expr<Head, Alloc>
-  where Head: Debug, Alloc: Allocator {
+impl<Token, Alloc> Debug for Expr<Token, Alloc>
+  where Token: Debug, Alloc: Allocator {
   fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
     write!(fmt,"Expr {{ ")?;
     self.fmt_fields(fmt)?;
