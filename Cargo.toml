@@ -2,7 +2,8 @@
 name = "expr"
 version = "0.1.0"
 edition = "2024"
-description = "A runtime for manipulating expressions in a natural deduction style"
+description = "Facilities for building and comparing expression trees of tokens"
 
 [dependencies]
 map-in-place = { path = "../map-in-place" }
+sparse-vec = { path = "../sparse-vec" }

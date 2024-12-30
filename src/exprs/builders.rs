@@ -8,9 +8,7 @@ use alloc::vec::Vec;
 use core::fmt::{self,Debug,Display,Formatter};
 use core::{hint,mem};
 use crate::exprs::{self,Expr,ExprInner,FmtExpr};
-// TODO: Uncomment once implemented.
-//
-// #[cfg(doc)] use crate::patterns::Pattern;
+#[cfg(doc)] use crate::patterns::Pattern;
 use crate::tokens::Token;
 use Builder::*;
 
