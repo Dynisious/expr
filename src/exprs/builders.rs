@@ -1,7 +1,7 @@
 //! Defines the [Builder] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-28
+//! Last Modified --- 2024-12-30
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
@@ -51,7 +51,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   ///
   /// ```
   /// # #![feature(allocator_api,assert_matches)]
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// # extern crate alloc;
@@ -73,7 +73,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   ///
   /// ```
   /// # #![feature(allocator_api,assert_matches)]
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// # extern crate alloc;
@@ -95,7 +95,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// #
   /// # let any_builder = Builder::from_str("a");
@@ -117,7 +117,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// #
   /// # let any_builder = Builder::from_str("a");
@@ -153,7 +153,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   ///
   /// ```
   /// # #![feature(assert_matches)]
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// #
@@ -204,7 +204,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// #
   /// # let any_builder = Builder::from_str("a");
@@ -216,10 +216,10 @@ impl<Token, Alloc> Builder<Token, Alloc>
   ///
   /// ```
   /// # #![feature(assert_matches)]
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
+  /// # use Builder::*;
   /// #
   /// # let expr_a = Expr::from_str("a");
   /// let mut builder: Builder<Token> = BExpr(expr_a);
@@ -263,7 +263,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// #
   /// # let any_builder = Builder::from_str("a");
@@ -288,9 +288,9 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # let expr_a_1 = Expr::from_str("a");
   /// # let expr_a_2 = expr_a_1.clone();
@@ -333,9 +333,9 @@ impl<Token, Alloc> Builder<Token, Alloc>
   ///
   /// ```
   /// # #![feature(allocator_api)]
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # extern crate alloc;
   /// #
@@ -369,9 +369,9 @@ impl<Token, Alloc> Builder<Token, Alloc>
   ///
   /// ```
   /// # #![feature(allocator_api)]
-  /// # use expr::exprs::{fmt_expr,Expr};
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{fmt_expr,Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # extern crate alloc;
   /// #
@@ -396,7 +396,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// #
   /// # let any_builder = Builder::from_str("a");
@@ -432,9 +432,9 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # let expr_a_1 = Expr::from_str("a");
   /// # let expr_a_2 = expr_a_1.clone();
@@ -475,7 +475,7 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   ///
   /// ```
   /// # #![feature(assert_matches)]
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// #
@@ -499,7 +499,7 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   ///
   /// ```
   /// # #![feature(allocator_api,assert_matches)]
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// #
@@ -519,9 +519,9 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # let token_a_1 = Token::from_str("a");
   /// # let token_a_2 = token_a_1.clone();
@@ -553,9 +553,9 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   ///
   /// ```
   /// # #![feature(allocator_api)]
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # extern crate alloc;
   /// #
@@ -588,7 +588,7 @@ impl Builder<Token<Global>, Global> {
   ///
   /// ```
   /// # #![feature(allocator_api,assert_matches)]
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// assert_matches!(Builder::from_str("a"),BExpr(expr));
@@ -603,9 +603,9 @@ impl Builder<Token<Global>, Global> {
   /// # Examples
   ///
   /// ```
-  /// # use expr::exprs::Expr;
-  /// # use expr::exprs::builders::Builder::{self,*};
+  /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
+  /// # use Builder::*;
   /// #
   /// # let any_builder = Builder::from_str("a");
   /// let mut builder1: Builder<Token> = any_builder;

@@ -1,7 +1,7 @@
 //! Defines the [Expr] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-28
+//! Last Modified --- 2024-12-30
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
@@ -19,7 +19,7 @@ mod expr_inners;
 /// Formatting method for [Displaying][Display] [Exprs][Expr].
 pub type FmtExpr<Token, Alloc> = fn(expr: &Expr<Token, Alloc>, fmt: &mut Formatter) -> fmt::Result;
 
-/// The default `FmtExpr` implementation
+/// The default `FmtExpr` implementation.
 pub fn fmt_expr<Token,Alloc>(expr: &Expr<Token, Alloc>, fmt: &mut Formatter) -> fmt::Result
   where Token: Display, Alloc: Allocator {
   write!(fmt,"{}",expr.head_token)?;
