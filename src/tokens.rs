@@ -1,7 +1,7 @@
 //! Defines the [Token] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-28
+//! Last Modified --- 2025-02-03
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
@@ -9,10 +9,11 @@ use core::borrow::Borrow;
 use core::convert::AsRef;
 use core::fmt::{self,Debug,Display,Formatter};
 use core::{mem,ptr};
-use core::str::{self,FromStr};
+use core::str::{self,FromStr,Utf8Error};
 use core::ops::{Deref,DerefMut};
 
 /// Text token.
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Token<Alloc = Global>
   where Alloc: Allocator {
@@ -30,7 +31,7 @@ impl<Alloc> Token<Alloc>
   ///
   /// # Safety
   ///
-  /// * bytes[..byte.len()] must be valid utf8 text.
+  /// * bytes[..bytes.len()] must be valid utf8 text.
   pub const unsafe fn from_parts(bytes: Vec<u8, Alloc>) -> Self { Self { bytes } }
   /// Deconstructs a Token into parts.
   pub const fn into_parts(self) -> Vec<u8, Alloc> {
@@ -51,6 +52,17 @@ impl<Alloc> Token<Alloc>
 
     unsafe { Self::from_parts(bytes) }
   }
+  /// Constructs a Token from text.
+  ///
+  /// # Params
+  ///
+  /// token --- Text of the Token.  
+  pub fn from_str(token: &str) -> Self
+    where Alloc: Default {
+    let alloc = Alloc::default();
+
+    Self::from_str_in(token,alloc)
+  }
   /// Gets the token allocator.
   pub fn allocator(&self) -> &Alloc { self.bytes.allocator() }
   /// Gets the token text.
@@ -61,28 +73,42 @@ impl<Alloc> Token<Alloc>
   pub const fn as_str_mut(&mut self) -> &mut str {
     unsafe { str::from_utf8_unchecked_mut(self.bytes.as_mut_slice()) }
   }
-}
-
-impl Token<Global> {
-  /// Constructs a Token from text.
+  /// Replaces `self[begin..end]` with `text`.
   ///
-  /// # Params
+  /// Returns `None` if `self[begin..end]` is not valid `utf8` text.
+  pub fn splice_checked(&mut self, begin: usize, end: usize, text: &str) -> Option<&mut Self> {
+    //Check that `self[begin..end]` is valid utf8 text.
+    self.as_str().split_at_checked(end)?.0.split_at_checked(begin)?;
+
+    self.bytes.splice(begin..end,text.as_bytes().iter().copied());
+    Some(self)
+  }
+  /// Replaces `self[begin..end]` with `text`.
   ///
-  /// token --- Text of the Token.  
-  pub fn from_str(token: &str) -> Self { Self::from_str_in(token,Global) }
+  /// # Panics
+  ///
+  /// * If `self[begin..end]` is not valid `utf8` text.
+  #[track_caller]
+  pub fn splice(&mut self, begin: usize, end: usize, text: &str) -> &mut Self {
+    self.splice_checked(begin,end,text).unwrap()
+  }
 }
 
-impl<Alloc> Clone for Token<Alloc>
-  where Alloc: Allocator + Clone {
-  fn clone(&self) -> Self { unsafe { Self::from_parts(self.bytes.clone()) } }
-  fn clone_from(&mut self, source: &Self) { self.bytes.clone_from(&source.bytes) }
+impl<Alloc> From<&str> for Token<Alloc>
+  where Alloc: Allocator + Default {
+  fn from(from: &str) -> Self { Self::from_str(from) }
 }
 
-impl From<&str> for Token<Global> {
-  fn from(from: &str) -> Self { Self::from_str_in(from,Global) }
+impl<Alloc> TryFrom<&[u8]> for Token<Alloc>
+  where Alloc: Allocator + Default {
+  type Error = Utf8Error;
+
+  /// Succeeds if `from` is valid `utf8` text.
+  fn try_from(from: &[u8]) -> Result<Self,Self::Error> { Ok(str::from_utf8(from)?.into()) }
 }
 
-impl FromStr for Token<Global> {
+impl<Alloc> FromStr for Token<Alloc>
+  where Alloc: Allocator + Default {
   type Err = !;
 
   fn from_str(s: &str) -> Result<Self,Self::Err> { Ok(s.into()) }
@@ -96,14 +122,14 @@ impl<Alloc, Rhs> PartialEq<Rhs> for Token<Alloc>
   fn eq(&self, rhs: &Rhs) -> bool { self.as_str() == rhs.borrow() }
 }
 
-impl<Alloc> Deref for Token<Alloc>
+impl<Alloc> const Deref for Token<Alloc>
   where Alloc: Allocator {
   type Target = str;
 
   fn deref(&self) -> &Self::Target { self.as_str() }
 }
 
-impl<Alloc> DerefMut for Token<Alloc>
+impl<Alloc> const DerefMut for Token<Alloc>
   where Alloc: Allocator {
   fn deref_mut(&mut self) -> &mut Self::Target { self.as_str_mut() }
 }
@@ -113,9 +139,19 @@ impl<Alloc> Borrow<str> for Token<Alloc>
   fn borrow(&self) -> &str { self.as_str() }
 }
 
-impl<Alloc> AsRef<str> for Token<Alloc>
+impl<T,Alloc> Borrow<T> for Token<Alloc>
+  where str: Borrow<T>, Alloc: Allocator {
+  fn borrow(&self) -> &T { self.as_str().borrow() }
+}
+
+impl<Alloc> AsRef<Self> for Token<Alloc>
   where Alloc: Allocator {
-  fn as_ref(&self) -> &str { self.as_str() }
+  fn as_ref(&self) -> &Self { self }
+}
+
+impl<T,Alloc> AsRef<T> for Token<Alloc>
+  where str: AsRef<T>, Alloc: Allocator {
+  fn as_ref(&self) -> &T { self.as_str().as_ref() }
 }
 
 impl<Alloc> Display for Token<Alloc>
@@ -125,5 +161,27 @@ impl<Alloc> Display for Token<Alloc>
 
 impl<Alloc> Debug for Token<Alloc>
   where Alloc: Allocator {
-  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { Display::fmt(self,fmt) }
+  fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { Debug::fmt(self.as_str(),fmt) }
+}
+
+impl<Alloc> PartialEq<Token<Alloc>> for str
+  where Alloc: Allocator {
+  fn eq(&self, rhs: &Token<Alloc>) -> bool { self == rhs.as_str() }
+}
+
+mod tests {
+  #![cfg(test)]
+  use alloc::alloc::Global;
+  use crate::tokens::Token;
+
+  #[test]
+  fn test_token_eq() {
+    let alloc = Global;
+
+    let tok_a = Token::from_str_in("a",alloc);
+    assert_eq!(tok_a,tok_a,"`Expr` of a single `Token` is not reflexive");
+
+    let tok_b = Token::from_str_in("b",alloc);
+    assert_ne!(tok_a,tok_b,"`Expr`s with different head tokens match");
+  }
 }

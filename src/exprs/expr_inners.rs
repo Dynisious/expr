@@ -1,7 +1,7 @@
 //! Defines the [ExprInner] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-28
+//! Last Modified --- 2025-02-03
 
 use alloc::alloc::Allocator;
 use alloc::vec::Vec;
@@ -11,7 +11,7 @@ use core::{mem,ptr};
 use crate::exprs::Expr;
 
 /// Representation of an expression tree of `Token`.
-#[derive(Copy)]
+#[derive(Clone,Copy)]
 pub struct ExprInner<Token, Children, Fmt> {
   /// Token at the head of this expression.
   pub head_token: Token,
@@ -48,22 +48,6 @@ impl<Token, Children, Fmt> ExprInner<Token, Children, Fmt> {
     where Token: Debug, Children: Debug, Fmt: Debug {
     write!(fmt,"head_token: {:?}, child_exprs: {:?}, fmt_expr: {:?}",
            self.head_token,self.child_exprs,self.fmt_expr)
-  }
-}
-
-impl<Token, Children, Fmt> Clone for ExprInner<Token, Children, Fmt>
-  where Token: Clone, Children: Clone, Fmt: Clone {
-  fn clone(&self) -> Self {
-    let head_token = self.head_token.clone();
-    let child_exprs = self.child_exprs.clone();
-    let fmt_expr = self.fmt_expr.clone();
-
-    Self::from_parts(head_token,child_exprs,fmt_expr)
-  }
-  fn clone_from(&mut self, source: &Self) {
-    self.head_token.clone_from(&source.head_token);
-    self.child_exprs.clone_from(&source.child_exprs);
-    self.fmt_expr.clone_from(&source.fmt_expr);
   }
 }
 

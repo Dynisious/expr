@@ -1,17 +1,19 @@
 //! Defines the [Expr] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-30
+//! Last Modified --- 2025-02-03
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
+use core::borrow::{Borrow,BorrowMut};
+use core::convert::{AsRef,AsMut};
 use core::fmt::{self,Debug,Display,Formatter};
 use core::{mem,ptr};
 use core::str::FromStr;
 use core::ops::{Deref,DerefMut};
 use crate::tokens::Token;
 pub use self::builders::Builder;
-pub use self::expr_inners::ExprInner;
+use self::expr_inners::ExprInner;
 
 mod builders;
 mod expr_inners;
@@ -58,13 +60,11 @@ impl<Token, Alloc> Expr<Token, Alloc>
     Self{inner}
   }
   /// Deconstructs an Expr into parts.
-  ///
-  /// Inverse of [from_parts][Self::from_parts].
-  pub const fn into_parts(self) -> (Token, Vec<Self, Alloc>, FmtExpr<Token, Alloc>) {
+  pub const fn into_parts(self) -> ExprInner<Token,Vec<Self,Alloc>,FmtExpr<Token,Alloc>> {
     let inner = unsafe { ptr::read(&self.inner) };
 
     mem::forget(self);
-    inner.into_parts()
+    inner
   }
   /// Constructs an Expr from a token.
   ///
@@ -90,6 +90,13 @@ impl<Token, Alloc> Expr<Token, Alloc>
 
     Self::from_token_in(head_token,allocator)
   }
+  /// Constructs a default Expr.
+  pub fn new() -> Self
+    where Token: Default + Display, Alloc: Default {
+    let alloc = Alloc::default();
+
+    Self::new_in(alloc)
+  }
 }
 
 impl<Alloc> Expr<Token<Alloc>, Alloc>
@@ -113,15 +120,17 @@ impl<Alloc> Expr<Token<Alloc>, Alloc>
   /// allocator --- Allocator of the expression.  
   pub fn from_str_in(head_token: &str, allocator: Alloc) -> Self
     where Alloc: Clone { Self::from_token(Token::from_str_in(head_token,allocator)) }
-}
-
-impl Expr<Token<Global>, Global> {
   /// Constructs an Expr from text.
   ///
   /// # Params
   ///
   /// head_token --- Token text at the head of this expression.  
-  pub fn from_str(head_token: &str) -> Self { Self::from_str_in(head_token,Global) }
+  pub fn from_str(head_token: &str) -> Self
+    where Alloc: Clone + Default {
+    let alloc = Alloc::default();
+
+    Self::from_str_in(head_token,alloc)
+  }
 }
 
 impl<Token, Alloc> Clone for Expr<Token, Alloc>
@@ -139,11 +148,20 @@ impl<Alloc> From<Token<Alloc>> for Expr<Token<Alloc>, Alloc>
   fn from(from: Token<Alloc>) -> Self { Self::from_token(from) }
 }
 
-impl From<&str> for Expr<Token<Global>, Global> {
+impl<Alloc> From<&str> for Expr<Token<Alloc>, Alloc>
+  where Alloc: Allocator + Clone + Default {
   fn from(from: &str) -> Self { Self::from_str(from) }
 }
 
-impl FromStr for Expr<Token<Global>, Global> {
+impl<Alloc,Error> TryFrom<&[u8]> for Expr<Token<Alloc>, Alloc>
+  where Alloc: Allocator + Clone, Token<Alloc>: for<'a> TryFrom<&'a [u8], Error = Error> {
+  type Error = Error;
+
+  fn try_from(from: &[u8]) -> Result<Self,Self::Error> { Ok(Self::from_token(from.try_into()?)) }
+}
+
+impl<Alloc> FromStr for Expr<Token<Alloc>, Alloc>
+  where Alloc: Allocator + Clone + Default {
   type Err = !;
 
   fn from_str(text: &str) -> Result<Self,Self::Err> { Ok(text.into()) }
@@ -163,14 +181,40 @@ impl<Token1, Alloc1, Token2, Alloc2> PartialEq<Expr<Token2, Alloc2>> for Expr<To
   fn eq(&self, rhs: &Expr<Token2, Alloc2>) -> bool { *self == rhs.inner }
 }
 
-impl<Token, Alloc> Deref for Expr<Token, Alloc>
+impl<Token, Alloc> AsRef<ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>>>
+  for Expr<Token, Alloc>
+  where Alloc: Allocator {
+  fn as_ref(&self) -> &ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>> { &*self }
+}
+
+impl<Token, Alloc> AsMut<ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>>>
+  for Expr<Token, Alloc>
+  where Alloc: Allocator {
+  fn as_mut(&mut self) -> &mut ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>> { &mut *self }
+}
+
+impl<Token, Alloc> Borrow<ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>>>
+  for Expr<Token, Alloc>
+  where Alloc: Allocator {
+  fn borrow(&self) -> &ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>> { self.as_ref() }
+}
+
+impl<Token, Alloc> BorrowMut<ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>>>
+  for Expr<Token, Alloc>
+  where Alloc: Allocator {
+  fn borrow_mut(&mut self) -> &mut ExprInner<Token, Vec<Self,Alloc>, FmtExpr<Token, Alloc>> {
+    self.as_mut()
+  }
+}
+
+impl<Token, Alloc> const Deref for Expr<Token, Alloc>
   where Alloc: Allocator {
   type Target = ExprInner<Token,Vec<Self,Alloc>,FmtExpr<Token,Alloc>>;
 
   fn deref(&self) -> &Self::Target { &self.inner }
 }
 
-impl<Token, Alloc> DerefMut for Expr<Token, Alloc>
+impl<Token, Alloc> const DerefMut for Expr<Token, Alloc>
   where Alloc: Allocator {
   fn deref_mut(&mut self) -> &mut Self::Target { &mut self.inner }
 }
@@ -200,21 +244,21 @@ mod tests {
     let alloc = Global;
 
     let tok_expr_a = Expr::from_str_in("a",alloc);
-    let tok_expr_b = Expr::from_str_in("b",alloc);
     assert_eq!(tok_expr_a,tok_expr_a,"`Expr` of a single `Token` is not reflexive");
 
     let mut builder = Builder::from_str_in("a",alloc);
     builder.push_str_in("a",alloc);
-    let single_child_expr_a = builder.finish();
+    let single_child_expr_a = builder.finish().unwrap();
     assert_eq!(single_child_expr_a,single_child_expr_a,"`Expr` with a single child is not reflexive");
 
     assert_ne!(tok_expr_a,single_child_expr_a,"`Expr`s with different number of children match");
 
+    let tok_expr_b = Expr::from_str_in("b",alloc);
     assert_ne!(tok_expr_a,tok_expr_b,"`Expr`s with different head tokens match");
 
     let mut builder = Builder::from_str_in("a",alloc);
     builder.push_str_in("b",alloc);
-    let single_child_expr_b = builder.finish();
+    let single_child_expr_b = builder.finish().unwrap();
     assert_ne!(single_child_expr_a,single_child_expr_b,"`Expr`s with different child tokens match");
   }
 }

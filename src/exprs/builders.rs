@@ -1,7 +1,7 @@
 //! Defines the [Builder] type.
 //!
 //! Author --- DMorgan  
-//! Last Modified --- 2024-12-30
+//! Last Modified --- 2025-02-03
 
 use alloc::alloc::{Allocator,Global};
 use alloc::vec::Vec;
@@ -26,14 +26,14 @@ pub enum Builder<Token, Alloc = Global>
   /// Hole to be filled with a head `Token`.
   BTokenHole {
     /// Child expressions of this expression.
-    child_exprs: Vec<Builder<Token,Alloc>,Alloc>,
+    child_exprs: Vec<Self,Alloc>,
     /// Formatting method for [Displaying][Display] [Exprs][Expr].
     fmt_expr: FmtExpr<Token,Alloc>,
   },
   /// Finished [Expr].
   BExpr(Expr<Token,Alloc>),
   /// [Expr] under construction.
-  BPart(ExprInner<Token,Vec<Builder<Token,Alloc>,Alloc>,FmtExpr<Token,Alloc>>),
+  BPart(ExprInner<Token,Vec<Self,Alloc>,FmtExpr<Token,Alloc>>),
 }
 
 impl<Token, Alloc> Builder<Token, Alloc>
@@ -52,12 +52,12 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
+  /// # use alloc::alloc::Global;
   /// # extern crate alloc;
   /// #
-  /// # let token_a = Token::from_str("a");
-  /// use alloc::alloc::Global;
+  /// # let token_a = Token::<Global>::from_str("a");
   ///
-  /// assert_matches!(Builder::from_token_in(token_a,Global),BExpr(expr));
+  /// assert_matches!(Builder::from_token(token_a),BExpr(expr));
   /// ```
   pub const fn from_token_in(token: Token, allocator: Alloc) -> Self
     where Token: Display { BExpr(Expr::from_token_in(token,allocator)) }
@@ -100,8 +100,8 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// let builder: Builder<Token> = any_builder;
   ///
   /// match &builder {
-  ///   BHole | BTokenHole {.. } => assert!(builder.is_hole()),
-  ///   _                        => assert!(!builder.is_hole()),
+  ///   BHole | BTokenHole { .. } => assert!(builder.is_hole()),
+  ///   _                         => assert!(!builder.is_hole()),
   /// }
   /// ```
   pub const fn is_hole(&self) -> bool {
@@ -141,8 +141,8 @@ impl<Token, Alloc> Builder<Token, Alloc>
     where Token: PartialEq<Token2>, Alloc2: Allocator {
     match self {
       BHole | BTokenHole { .. } => false,
-      BExpr(lhs)        => lhs == expr,
-      BPart(lhs)        => lhs == expr,
+      BExpr(lhs) => lhs == expr,
+      BPart(lhs) => lhs == expr,
     }
   }
   /// Takes the head `Token` of the [Expr].
@@ -159,7 +159,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// let builder: Builder<Token> = any_builder;
   ///
   /// match builder {
-  ///   mut builder@BHole => assert_eq!(None,builder.take_token()),
+  ///   mut builder@BHole | mut builder@BTokenHole{..} => assert_eq!(None,builder.take_token()),
   ///   mut builder       => {
   ///     let token_a = builder.take_token().unwrap();
   ///     assert_matches!(builder,BTokenHole { .. });
@@ -169,29 +169,50 @@ impl<Token, Alloc> Builder<Token, Alloc>
   pub fn take_token(&mut self) -> Option<Token> {
     use map_in_place::vec::alloc;
 
-    let (head_token,child_exprs,fmt_expr) = match &mut *self {
-        BHole | BTokenHole{..} => return None,
-        slot@BExpr(_) => {
-          let BExpr(expr) = mem::replace(slot,BHole)
-            else { if cfg!(debug_assertions) { unreachable!("matched `builder` as `BExpr`") }
-                   else { unsafe { hint::unreachable_unchecked() } } };
-          let (head_token,child_exprs,fmt_expr) = expr.into_parts();
+    //Fail on holes
+    match self {
+      BHole | BTokenHole{..} => return None,
+      _ => (),
+    }
+
+    //Break the expression into parts
+    let (head_token,child_exprs,fmt_expr) = match mem::replace(self,BHole) {
+        BExpr(expr) => {
+          let (head_token,child_exprs,fmt_expr) = expr.into_parts().into_parts();
           let child_exprs = alloc::map(child_exprs,BExpr);
 
           (head_token,child_exprs,fmt_expr)
         },
-        slot@BPart(_) => {
-          let BPart(builder) = mem::replace(slot,BHole)
-            else { if cfg!(debug_assertions) { unreachable!("matched `builder` as `BPart`") }
-                   else { unsafe { hint::unreachable_unchecked() } } };
-          let (head_token,child_exprs,fmt_expr) = builder.into_parts();
-
-          (head_token,child_exprs,fmt_expr)
-        },
+        BPart(builder) => builder.into_parts(),
+        BHole | BTokenHole{..} =>
+          if cfg!(debug_assertions) { unreachable!("hole cases were covered before entering") }
+          else { unsafe { hint::unreachable_unchecked() } }
       };
 
     *self = BTokenHole{child_exprs,fmt_expr};
     Some(head_token)
+  }
+  /// Sets the head `Token` of the [Expr].
+  ///
+  /// The old head `Token` is returned.
+  ///
+  /// # Params
+  ///
+  /// token --- New `Token` at the head of the [Expr].  
+  pub fn set_token(&mut self, token: Token) -> Option<Token> {
+    match self {
+      BHole          => return None,
+      BExpr(expr)    => return Some(mem::replace(&mut expr.head_token,token)),
+      BPart(builder) => return Some(mem::replace(&mut builder.head_token,token)),
+      //Replaced next
+      BTokenHole{..} => (),
+    }
+
+    if let BTokenHole{child_exprs,fmt_expr} = mem::replace(self,BHole) {
+      *self = BPart(ExprInner::from_parts(token,child_exprs,fmt_expr));
+      None
+    } else if cfg!(debug_assertions) { unreachable!("hole cases were covered before entering") }
+      else { unsafe { hint::unreachable_unchecked() } }
   }
   /// Gets the child expressions under construction.
   ///
@@ -223,7 +244,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// let mut builder: Builder<Token> = BExpr(expr_a);
   ///
   /// let _must_use = builder.child_exprs();
-  /// assert_matches!(builder,BPart(builder)); //A completed Expr is converted to a partial expressions
+  /// assert_matches!(builder,BPart(builder)); //A completed Expr is converted to a partial expression
   /// ```
   ///
   /// # Panics
@@ -231,6 +252,8 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// If `self` does not have child expressions; use [has_children][Self::has_children] to test.
   #[must_use]
   pub fn child_exprs(&mut self) -> &mut Vec<Self, Alloc> {
+    use map_in_place::vec::alloc;
+
     debug_assert!(self.has_children(),"can't reference child expressions of a hole");
 
     match self {
@@ -242,8 +265,8 @@ impl<Token, Alloc> Builder<Token, Alloc>
         let BExpr(expr) = mem::replace(builder,BHole)
           else { if cfg!(debug_assertions) { unreachable!("matched `builder` as `BExpr`") }
                  else { unsafe { hint::unreachable_unchecked() } } };
-        let (head_token,child_exprs,fmt_expr) = expr.into_parts();
-        let child_exprs = map_in_place::vec::alloc::map(child_exprs,BExpr);
+        let (head_token,child_exprs,fmt_expr) = expr.into_parts().into_parts();
+        let child_exprs = alloc::map(child_exprs,BExpr);
 
         *builder = BPart(ExprInner::from_parts(head_token,child_exprs,fmt_expr));
         if let BPart(builder) = builder { &mut builder.child_exprs }
@@ -291,14 +314,22 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # use Builder::*;
   /// #
   /// # let expr_a_1 = Expr::from_str("a");
-  /// # let expr_a_2 = expr_a_1.clone();
   /// # let any_builder = Builder::from_str("a");
-  /// let mut builder1: Builder<Token> = any_builder;
-  /// let mut builder2 = builder1.clone();
+  /// let expr_a_2: Expr<Token> = expr_a_1.clone();
+  /// let mut builder2: Builder<Token> = any_builder.clone();
   ///
-  /// //Same effect
-  /// builder1.push_expr(expr_a_1);
-  /// builder2.child_exprs().push(BExpr(expr_a_2));
+  /// match any_builder {
+  ///   BExpr(mut expr) => {
+  ///     //Same effect
+  ///     expr.child_exprs.push(expr_a_1);
+  ///     builder2.push_expr(expr_a_2);
+  ///   },
+  ///   mut builder1 => {
+  ///     //Same effect
+  ///     builder1.child_exprs().push(BExpr(expr_a_2));
+  ///     builder2.push_expr(expr_a_1);
+  ///   }
+  /// }
   /// ```
   ///
   /// # Panics
@@ -338,16 +369,24 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// # extern crate alloc;
   /// #
   /// # let token_a_1 = Token::from_str("a");
-  /// # let token_a_2 = token_a_1.clone();
   /// # let any_builder = Builder::from_str("a");
   /// use alloc::alloc::Global;
   ///
-  /// let mut builder1: Builder<Token> = any_builder;
-  /// let mut builder2 = builder1.clone();
+  /// let token_a_2: Token = token_a_1.clone();
+  /// let mut builder2: Builder<Token> = any_builder.clone();
   ///
-  /// //Same effect
-  /// builder1.push_token_in(token_a_1,Global);
-  /// builder2.child_exprs().push(BExpr(Expr::from_token_in(token_a_2,Global)));
+  /// match any_builder {
+  ///   BExpr(mut expr)   => {
+  ///     //Same effect
+  ///     expr.child_exprs.push(Expr::from_token_in(token_a_1,Global));
+  ///     builder2.push_token_in(token_a_2,Global);
+  ///   },
+  ///   mut builder1 => {
+  ///     //Same effect
+  ///     builder1.child_exprs().push(BExpr(Expr::from_token_in(token_a_1,Global)));
+  ///     builder2.push_token_in(token_a_2,Global);
+  ///   }
+  /// }
   /// ```
   ///
   /// # Panics
@@ -373,7 +412,7 @@ impl<Token, Alloc> Builder<Token, Alloc>
   /// #
   /// # extern crate alloc;
   /// #
-  /// # let token_a_1 = Token::from_str("a");
+  /// # let token_a_1 = Token::<Global>::from_str("a");
   /// # let token_a_2 = token_a_1.clone();
   /// # let any_builder = Builder::from_str("a");
   /// use alloc::alloc::Global;
@@ -427,36 +466,85 @@ impl<Token, Alloc> Builder<Token, Alloc>
   }
   /// Constructs an [Expr].
   ///
+  /// Returns `None` if `can_finish` would return `false`. Replaces `self` with `BHole` if `Some`
+  /// is returned.
+  ///
   /// # Examples
   ///
   /// ```
+  /// # #![feature(allocator_api)]
+  /// # use alloc::alloc::Global;
   /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
   /// # use Builder::*;
+  /// # extern crate alloc;
   /// #
-  /// # let expr_a_1 = Expr::from_str("a");
-  /// # let expr_a_2 = expr_a_1.clone();
-  /// let builder = BExpr(expr_a_1);
+  /// # let expr_a_1 = Expr::<Token<Global>>::from_str("a");
+  /// let expr_a_2 = expr_a_1.clone();
+  /// let mut builder = BExpr(expr_a_1);
   ///
-  /// assert_eq!(builder.finish(),expr_a_2);
+  /// assert_eq!(builder.finish(),Some(expr_a_2));
   /// ```
-  ///
-  /// # Panics
-  ///
-  /// If `self` contains holes; use [can_finish][Self::can_finish] to test.
-  pub fn finish(self) -> Expr<Token, Alloc>
-    where Alloc: Allocator {
-    debug_assert!(self.can_finish(),"cant finish an expression with holes");
+  pub fn finish(&mut self) -> Option<Expr<Token, Alloc>> {
+    use core::mem;
 
+    //Fail on holes
     match self {
-      BHole | BTokenHole{..} => panic!("cant finish an expression with holes"),
-      BExpr(expr) => expr,
-      BPart(builder) => {
-        let (head_token,child_exprs,fmt_expr) = builder.into_parts();
-        let child_exprs = map_in_place::vec::alloc::map(child_exprs,Self::finish);
+      BHole | BTokenHole{..} => return None,
+      _ => (),
+    }
 
-        Expr::from_parts(head_token,child_exprs,fmt_expr)
+    //Construct the Expr
+    match mem::replace(self,BHole) {
+      BExpr(expr)    => Some(expr),
+      BPart(builder) => {
+        let (head_token,child_builders,fmt_expr) = builder.into_parts();
+        let (child_builders_ptr,child_builders_len,child_builders_capacity,alloc) =
+          Vec::into_parts_with_alloc(child_builders);
+        let mut child_builders = unsafe {
+            Vec::from_parts_in(child_builders_ptr,child_builders_len,child_builders_capacity,&alloc)
+          };
+        let mut child_exprs = Vec::with_capacity_in(child_builders.len(),&alloc);
+
+        //Build child Exprs
+        for child in child_builders.iter_mut().map(Self::finish) {
+          match child {
+            Some(expr) => child_exprs.push(expr),
+            //Stop on failed child Expr
+            None       => break,
+          }
+        }
+
+        if child_exprs.len() == child_builders.len() {
+          //All child Exprs built successfully
+
+          mem::drop(child_builders); // Release `alloc`
+
+          let (child_exprs_ptr,child_exprs_len,child_exprs_capacity) = Vec::into_parts(child_exprs);
+          let child_exprs = unsafe {
+              Vec::from_parts_in(child_exprs_ptr,child_exprs_len,child_exprs_capacity,alloc)
+            };
+
+          return Some(Expr::from_parts(head_token,child_exprs,fmt_expr))
+        }
+
+        //Replace built child Exprs
+        for (index,child) in child_exprs.into_iter().enumerate() {
+          child_builders[index] = BExpr(child)
+        }
+
+        let (child_builders_ptr,child_builders_len,child_builders_capacity) =
+          Vec::into_parts(child_builders);
+        let child_builders = unsafe {
+            Vec::from_parts_in(child_builders_ptr,child_builders_len,child_builders_capacity,alloc)
+          };
+
+        *self = BPart(ExprInner::from_parts(head_token,child_builders,fmt_expr));
+        None
       },
+      BHole | BTokenHole{..} => if cfg!(debug_assertions) {
+          unreachable!("hole cases were covered before entering") }
+        else { unsafe { core::hint::unreachable_unchecked() } },
     }
   }
 }
@@ -472,12 +560,15 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   /// # Examples
   ///
   /// ```
-  /// # #![feature(assert_matches)]
+  /// # #![feature(allocator_api,assert_matches)]
+  /// # use alloc::alloc::Global;
   /// # use expr::exprs::Builder::{self,*};
   /// # use expr::tokens::Token;
   /// # use std::assert_matches::assert_matches;
   /// #
-  /// # let token_a = Token::from_str("a");
+  /// # extern crate alloc;
+  /// #
+  /// # let token_a = Token::<Global>::from_str("a");
   /// assert_matches!(Builder::from_token(token_a),BExpr(expr));
   /// ```
   pub fn from_token(head_token: Token<Alloc>) -> Self
@@ -508,6 +599,31 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   /// ```
   pub fn from_str_in(token: &str, allocator: Alloc) -> Self
     where Alloc: Clone { Self::from_token(Token::from_str_in(token,allocator)) }
+  /// Constructs a builder which represents a [Token] with no child expressions.
+  ///
+  /// # Params
+  ///
+  /// head_token --- Text at the head of this expression.  
+  /// allocator --- Allocator of the expression.  
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// # #![feature(allocator_api,assert_matches)]
+  /// # use expr::exprs::Builder::{self,*};
+  /// # use expr::tokens::Token;
+  /// # use std::assert_matches::assert_matches;
+  /// #
+  /// # extern crate alloc;
+  ///
+  /// assert_matches!(Builder::<Token>::from_str("a"),BExpr(expr));
+  /// ```
+  pub fn from_str(token: &str) -> Self
+    where Alloc: Clone + Default {
+    let alloc = Alloc::default();
+
+    Self::from_str_in(token,alloc)
+  }
   /// Pushes a [Token] as a child expression.
   ///
   /// # Params
@@ -524,12 +640,20 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   /// # let token_a_1 = Token::from_str("a");
   /// # let token_a_2 = token_a_1.clone();
   /// # let any_builder = Builder::from_str("a");
-  /// let mut builder1: Builder<Token> = any_builder;
-  /// let mut builder2 = builder1.clone();
+  /// let mut builder2: Builder<Token> = any_builder.clone();
   ///
-  /// //Same effect
-  /// builder1.push_token(token_a_1);
-  /// builder2.child_exprs().push(BExpr(Expr::from_token(token_a_2)));
+  /// match any_builder {
+  ///   BExpr(mut expr)   => {
+  ///     //Same effect
+  ///     expr.child_exprs.push(Expr::from_token(token_a_1));
+  ///     builder2.push_token(token_a_2);
+  ///   },
+  ///   mut builder1 => {
+  ///     //Same effect
+  ///     builder1.child_exprs().push(BExpr(Expr::from_token(token_a_1)));
+  ///     builder2.push_token(token_a_2);
+  ///   }
+  /// }
   /// ```
   ///
   /// # Panics
@@ -560,12 +684,20 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   /// # let any_builder = Builder::from_str("a");
   /// use alloc::alloc::Global;
   ///
-  /// let mut builder1: Builder<Token> = any_builder;
-  /// let mut builder2 = builder1.clone();
+  /// let mut builder2: Builder<Token> = any_builder.clone();
   ///
-  /// //Same effect
-  /// builder1.push_str_in("a",Global);
-  /// builder2.child_exprs().push(BExpr(Expr::from_str_in("a",Global)));
+  /// match any_builder {
+  ///   BExpr(mut expr)   => {
+  ///     //Same effect
+  ///     expr.child_exprs.push(Expr::from_str_in("a",Global));
+  ///     builder2.push_str_in("a",Global);
+  ///   },
+  ///   mut builder1 => {
+  ///     //Same effect
+  ///     builder1.child_exprs().push(BExpr(Expr::from_str_in("a",Global)));
+  ///     builder2.push_str_in("a",Global);
+  ///   }
+  /// }
   /// ```
   ///
   /// # Panics
@@ -573,25 +705,6 @@ impl<Alloc> Builder<Token<Alloc>, Alloc>
   /// If `self` does not have child expressions; use [has_children][Self::has_children] to test.
   pub fn push_str_in(&mut self, token: &str, allocator: Alloc) -> &mut Self
     where Alloc: Clone { self.push_token(Token::from_str_in(token,allocator)) }
-}
-
-impl Builder<Token<Global>, Global> {
-  /// Constructs a builder which represents a [Token] with no child expressions.
-  ///
-  /// # Params
-  ///
-  /// head_token --- Text at the head of this expression.  
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// # #![feature(allocator_api,assert_matches)]
-  /// # use expr::exprs::Builder::{self,*};
-  /// # use expr::tokens::Token;
-  /// # use std::assert_matches::assert_matches;
-  /// assert_matches!(Builder::from_str("a"),BExpr(expr));
-  /// ```
-  pub fn from_str(token: &str) -> Self { Self::from_str_in(token,Global) }
   /// Pushes text as a child expression.
   ///
   /// # Params
@@ -601,23 +714,41 @@ impl Builder<Token<Global>, Global> {
   /// # Examples
   ///
   /// ```
+  /// # #![feature(allocator_api)]
   /// # use expr::exprs::{Expr,Builder};
   /// # use expr::tokens::Token;
   /// # use Builder::*;
   /// #
+  /// # extern crate alloc;
+  /// #
   /// # let any_builder = Builder::from_str("a");
-  /// let mut builder1: Builder<Token> = any_builder;
-  /// let mut builder2 = builder1.clone();
+  /// use alloc::alloc::Global;
   ///
-  /// //Same effect
-  /// builder1.push_str("a");
-  /// builder2.child_exprs().push(BExpr(Expr::from_str("a")));
+  /// let mut builder2: Builder<Token> = any_builder.clone();
+  ///
+  /// match any_builder {
+  ///   BExpr(mut expr)   => {
+  ///     //Same effect
+  ///     expr.child_exprs.push(Expr::from_str("a"));
+  ///     builder2.push_str("a");
+  ///   },
+  ///   mut builder1 => {
+  ///     //Same effect
+  ///     builder1.child_exprs().push(BExpr(Expr::from_str("a")));
+  ///     builder2.push_str("a");
+  ///   }
+  /// }
   /// ```
   ///
   /// # Panics
   ///
   /// If `self` does not have child expressions; use [has_children][Self::has_children] to test.
-  pub fn push_str(&mut self, token: &str) -> &mut Self { self.push_token(Token::from_str(token)) }
+  pub fn push_str(&mut self, token: &str) -> &mut Self
+    where Alloc: Clone + Default {
+    let alloc = Alloc::default();
+
+    self.push_str_in(token,alloc)
+  }
 }
 
 impl<Token, Alloc> Clone for Builder<Token, Alloc>
